@@ -1,59 +1,109 @@
 "use client";
+
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { load, save } from "@/lib/storage";
 
-type Pulse = { date: string; energy: number; stress: number; mood: number; focus: number; note: string; };
+type Pulse = {
+  date: string;
+  energy: number;
+  stress: number;
+  mood: number;
+  focus: number;
+};
+
 const KEY = "pf_pulses";
 
 export default function Today() {
-  const today = new Date().toISOString().slice(0,10);
-  const [all, setAll] = useState<Pulse[]>([]);
-  const [pulse, setPulse] = useState<Pulse>({ date: today, energy: 3, stress: 3, mood: 3, focus: 3, note: "" });
+  const today = new Date().toISOString().slice(0, 10);
 
-  useEffect(() => { setAll(load<Pulse[]>(KEY, [])); }, []);
+  const [all, setAll] = useState<Pulse[]>([]);
+  const [pulse, setPulse] = useState<Pulse>({
+    date: today,
+    energy: 3,
+    stress: 3,
+    mood: 3,
+    focus: 3,
+  });
+
+  useEffect(() => {
+    setAll(load<Pulse[]>(KEY, []));
+  }, []);
 
   const submit = () => {
-    const next = [pulse, ...all.filter(p => p.date !== pulse.date)].slice(0, 30);
+    const next = [pulse, ...all.filter((p) => p.date !== pulse.date)].slice(0, 30);
     setAll(next);
     save(KEY, next);
-    alert("Saved. Weekly plan will reflect this trend later.");
+    alert("Saved. Next: log a decision, then check the weekly plan.");
   };
 
+  const setNum =
+    (k: keyof Omit<Pulse, "date">) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setPulse((p) => ({ ...p, [k]: Number(e.target.value) }));
+
   return (
-    <div className="grid" style={{ gap: 12 }}>
+    <div className="grid" style={{ gap: 16 }}>
       <div className="card">
-        <div className="badge">Daily pulse</div>
-        <h1 className="h1">Today</h1>
-        <p className="p">30 seconds. Capture state. No judgement.</p>
-      </div>
+        <h2 className="h2">Today</h2>
+        <p className="p">
+          Quick daily pulse. (Demo: stored in <code>localStorage</code>.)
+        </p>
 
-      <div className="card grid" style={{ gap: 10 }}>
-        {(["energy","stress","mood","focus"] as const).map((k) => (
-          <div key={k}>
-            <div className="label">{k.toUpperCase()} (1–5)</div>
-            <input className="input" type="number" min={1} max={5}
-              value={pulse[k]}
-              onChange={(e) => setPulse({ ...pulse, [k]: Number(e.target.value) })}
-            />
+        <div className="grid" style={{ gap: 12, marginTop: 12 }}>
+          <div>
+            <div className="small">Energy (1–5)</div>
+            <input type="range" min={1} max={5} value={pulse.energy} onChange={setNum("energy")} />
+            <div className="small">Value: {pulse.energy}</div>
           </div>
-        ))}
-        <div>
-          <div className="label">Note (optional)</div>
-          <textarea className="textarea" value={pulse.note} onChange={(e) => setPulse({ ...pulse, note: e.target.value })} />
+
+          <div>
+            <div className="small">Stress (1–5)</div>
+            <input type="range" min={1} max={5} value={pulse.stress} onChange={setNum("stress")} />
+            <div className="small">Value: {pulse.stress}</div>
+          </div>
+
+          <div>
+            <div className="small">Mood (1–5)</div>
+            <input type="range" min={1} max={5} value={pulse.mood} onChange={setNum("mood")} />
+            <div className="small">Value: {pulse.mood}</div>
+          </div>
+
+          <div>
+            <div className="small">Focus (1–5)</div>
+            <input type="range" min={1} max={5} value={pulse.focus} onChange={setNum("focus")} />
+            <div className="small">Value: {pulse.focus}</div>
+          </div>
         </div>
-        <button className="btn btnPrimary" onClick={submit}>Save pulse</button>
+
+        <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
+          <button className="btn btnPrimary" onClick={submit}>
+            Save today’s pulse
+          </button>
+
+          {/* Guided loop buttons */}
+          <Link className="btn btnPrimary" href="/decisions?loop=1">
+            Next: Decisions →
+          </Link>
+          <Link className="btn" href="/weekly?loop=1">
+            Skip to Weekly
+          </Link>
+        </div>
       </div>
 
       <div className="card">
-        <h2 className="h2">Last entries</h2>
-        <div className="grid" style={{ gap: 8 }}>
-          {all.slice(0,5).map((p) => (
-            <div key={p.date} className="p">
-              <b>{p.date}</b> — E{p.energy} S{p.stress} M{p.mood} F{p.focus} {p.note ? `· ${p.note}` : ""}
-            </div>
-          ))}
-          {all.length === 0 && <p className="p">No entries yet.</p>}
-        </div>
+        <h3 className="h2">Recent pulses</h3>
+        {all.length === 0 ? (
+          <p className="p">No entries yet.</p>
+        ) : (
+          <ul className="p" style={{ lineHeight: 1.8 }}>
+            {all.slice(0, 7).map((p) => (
+              <li key={p.date}>
+                <b>{p.date}</b> — E:{p.energy} S:{p.stress} M:{p.mood} F:{p.focus}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

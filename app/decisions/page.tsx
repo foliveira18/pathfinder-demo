@@ -1,119 +1,112 @@
 "use client";
+
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { load, save, uid } from "@/lib/storage";
-import { demoGuidance } from "@/lib/demo_ai";
+import { load, save } from "@/lib/storage";
 
 type Decision = {
   id: string;
-  createdAt: string;
-  title: string;
-  domain: string;
-  reversibility: string;
-  confidence: number;
-  assumption: string;
+  date: string;
+  decision: string;
   options: string;
-  guidance?: { headline: string; nextStep: string; guardrail: string; note: string; };
+  assumptions: string;
+  nextAction: string;
 };
 
 const KEY = "pf_decisions";
 
-export default function Decisions() {
-  const [items, setItems] = useState<Decision[]>([]);
-  const [d, setD] = useState<Omit<Decision,"id"|"createdAt">>({
-    title: "",
-    domain: "Career/Meaning",
-    reversibility: "Easy",
-    confidence: 60,
-    assumption: "",
-    options: "Option A\nOption B\nOption C",
+export default function DecisionsPage() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [all, setAll] = useState<Decision[]>([]);
+  const [d, setD] = useState<Decision>({
+    id: crypto.randomUUID(),
+    date: today,
+    decision: "",
+    options: "",
+    assumptions: "",
+    nextAction: "",
   });
 
-  useEffect(() => setItems(load<Decision[]>(KEY, [])), []);
+  useEffect(() => {
+    setAll(load<Decision[]>(KEY, []));
+  }, []);
 
-  const add = () => {
-    if (!d.title.trim()) return alert("Add a decision title.");
-    const guidance = demoGuidance({
-      title: d.title,
-      domain: d.domain,
-      reversibility: d.reversibility,
-      confidence: d.confidence,
-      assumption: d.assumption,
-    });
-    const item: Decision = { id: uid("dec"), createdAt: new Date().toISOString(), ...d, guidance };
-    const next = [item, ...items];
-    setItems(next);
+  const submit = () => {
+    const item = { ...d, id: d.id || crypto.randomUUID() };
+    const next = [item, ...all].slice(0, 50);
+    setAll(next);
     save(KEY, next);
+    alert("Saved. Next: go to Weekly plan.");
+    // reset
+    setD({
+      id: crypto.randomUUID(),
+      date: today,
+      decision: "",
+      options: "",
+      assumptions: "",
+      nextAction: "",
+    });
   };
 
   return (
-    <div className="grid" style={{ gap: 12 }}>
+    <div className="grid" style={{ gap: 16 }}>
       <div className="card">
-        <div className="badge">Decision journal</div>
-        <h1 className="h1">Decisions</h1>
-        <p className="p">2 minutes. Turn confusion into a next step.</p>
-      </div>
+        <h2 className="h2">Decision Journal</h2>
+        <p className="p">Log a decision in a structured way (demo: localStorage).</p>
 
-      <div className="card grid" style={{ gap: 10 }}>
-        <div>
-          <div className="label">Decision title</div>
-          <input className="input" value={d.title} onChange={(e)=>setD({...d,title:e.target.value})} />
+        <div className="grid" style={{ gap: 10, marginTop: 12 }}>
+          <input
+            value={d.decision}
+            onChange={(e) => setD((x) => ({ ...x, decision: e.target.value }))}
+            placeholder="Decision (e.g., accept role / stay / renegotiate)"
+          />
+          <input
+            value={d.options}
+            onChange={(e) => setD((x) => ({ ...x, options: e.target.value }))}
+            placeholder="Options (comma-separated)"
+          />
+          <input
+            value={d.assumptions}
+            onChange={(e) => setD((x) => ({ ...x, assumptions: e.target.value }))}
+            placeholder="Key assumptions / what would change your mind"
+          />
+          <input
+            value={d.nextAction}
+            onChange={(e) => setD((x) => ({ ...x, nextAction: e.target.value }))}
+            placeholder="Next action (one concrete step)"
+          />
         </div>
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div className="label">Domain</div>
-            <select className="select" value={d.domain} onChange={(e)=>setD({...d,domain:e.target.value})}>
-              <option>Health/Energy</option>
-              <option>Money/Security</option>
-              <option>Relationships/Connection</option>
-              <option>Career/Meaning</option>
-            </select>
-          </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div className="label">Reversibility</div>
-            <select className="select" value={d.reversibility} onChange={(e)=>setD({...d,reversibility:e.target.value})}>
-              <option>Easy</option>
-              <option>Medium</option>
-              <option>Hard</option>
-            </select>
-          </div>
+
+        <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
+          <button className="btn btnPrimary" onClick={submit} disabled={!d.decision.trim()}>
+            Save decision
+          </button>
+
+          {/* Guided loop buttons */}
+          <Link className="btn btnPrimary" href="/weekly?loop=1">
+            Next: Weekly →
+          </Link>
+          <Link className="btn" href="/today?loop=1">
+            Back to Today
+          </Link>
         </div>
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div className="label">Confidence (0–100)</div>
-            <input className="input" type="number" min={0} max={100} value={d.confidence} onChange={(e)=>setD({...d,confidence:Number(e.target.value)})} />
-          </div>
-          <div style={{ flex: 2, minWidth: 260 }}>
-            <div className="label">Key assumption to test this week</div>
-            <input className="input" value={d.assumption} onChange={(e)=>setD({...d,assumption:e.target.value})} />
-          </div>
-        </div>
-        <div>
-          <div className="label">Options (one per line)</div>
-          <textarea className="textarea" value={d.options} onChange={(e)=>setD({...d,options:e.target.value})} />
-        </div>
-        <button className="btn btnPrimary" onClick={add}>Generate guidance (demo)</button>
       </div>
 
       <div className="card">
-        <h2 className="h2">Recent decisions</h2>
-        <div className="grid" style={{ gap: 10 }}>
-          {items.slice(0,5).map((x) => (
-            <div key={x.id} className="card" style={{ padding: 12, borderColor: "var(--line)" }}>
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <b>{x.title}</b><span className="badge">{x.domain}</span>
-              </div>
-              {x.guidance && (
-                <>
-                  <p className="p" style={{ marginTop: 6 }}><b>{x.guidance.headline}</b></p>
-                  <p className="p">{x.guidance.nextStep}</p>
-                  <p className="p">{x.guidance.guardrail}</p>
-                  <p className="small">{x.guidance.note}</p>
-                </>
-              )}
-            </div>
-          ))}
-          {items.length === 0 && <p className="p">No decisions yet.</p>}
-        </div>
+        <h3 className="h2">Recent decisions</h3>
+        {all.length === 0 ? (
+          <p className="p">No decisions yet.</p>
+        ) : (
+          <ul className="p" style={{ lineHeight: 1.7 }}>
+            {all.slice(0, 6).map((x) => (
+              <li key={x.id}>
+                <b>{x.date}</b> — {x.decision}
+                {x.nextAction ? <div className="small">Next: {x.nextAction}</div> : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

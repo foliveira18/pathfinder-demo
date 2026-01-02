@@ -1,102 +1,93 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { load, save } from "@/lib/storage";
 
-type Weekly = {
-  weekISO: string;
-  focusDomain: string;
+type WeeklyPlan = {
+  weekStart: string;
   bestMove: string;
-  microHabits: string[];
-  affirmations: string[];
+  microHabits: string;
+  reviewQuestion: string;
 };
 
 const KEY = "pf_weekly";
 
-function currentWeekISO() {
+function mondayOfThisWeek(): string {
   const d = new Date();
-  const onejan = new Date(d.getFullYear(),0,1);
-  const week = Math.ceil((((d.getTime()-onejan.getTime())/86400000)+onejan.getDay()+1)/7);
-  return `${d.getFullYear()}-W${String(week).padStart(2,"0")}`;
+  const day = d.getDay(); // 0 Sun ... 1 Mon
+  const diff = (day === 0 ? -6 : 1 - day); // move to Monday
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
 }
 
-export default function Weekly() {
-  const weekISO = currentWeekISO();
-  const [saved, setSaved] = useState<Weekly[]>([]);
-  const [focusDomain, setFocusDomain] = useState("Career/Meaning");
-  const [bestMove, setBestMove] = useState("Send one message that moves my most important goal forward.");
-  const [habits, setHabits] = useState("15 minutes focused work\n10 minute walk\nOne reconnection message");
-  const [affirm, setAffirm] = useState("I take small actions daily.\nI choose progress over perfection.");
+export default function WeeklyPage() {
+  const [plan, setPlan] = useState<WeeklyPlan>({
+    weekStart: mondayOfThisWeek(),
+    bestMove: "",
+    microHabits: "",
+    reviewQuestion: "What did I learn this week that changes next week’s best move?",
+  });
 
-  useEffect(() => setSaved(load<Weekly[]>(KEY, [])), []);
+  useEffect(() => {
+    const existing = load<WeeklyPlan | null>(KEY, null);
+    if (existing) setPlan(existing);
+  }, []);
 
-  const savePlan = () => {
-    const item: Weekly = {
-      weekISO,
-      focusDomain,
-      bestMove,
-      microHabits: habits.split("\n").map(s=>s.trim()).filter(Boolean),
-      affirmations: affirm.split("\n").map(s=>s.trim()).filter(Boolean),
-    };
-    const next = [item, ...saved.filter(x=>x.weekISO !== weekISO)].slice(0, 12);
-    setSaved(next);
-    save(KEY, next);
-    alert("Weekly plan saved.");
+  const submit = () => {
+    save(KEY, plan);
+    alert("Saved. Loop complete — restart with Today.");
   };
 
   return (
-    <div className="grid" style={{ gap: 12 }}>
+    <div className="grid" style={{ gap: 16 }}>
       <div className="card">
-        <div className="badge">Weekly ritual</div>
-        <h1 className="h1">Weekly opportunity plan</h1>
-        <p className="p">Pick a domain. Define one best move. Add micro-habits and affirmations.</p>
+        <h2 className="h2">Weekly Plan</h2>
+        <p className="p">One best move + micro-habits. (Demo: localStorage.)</p>
+
+        <div className="grid" style={{ gap: 10, marginTop: 12 }}>
+          <input
+            value={plan.weekStart}
+            onChange={(e) => setPlan((p) => ({ ...p, weekStart: e.target.value }))}
+            placeholder="Week start (YYYY-MM-DD)"
+          />
+          <input
+            value={plan.bestMove}
+            onChange={(e) => setPlan((p) => ({ ...p, bestMove: e.target.value }))}
+            placeholder="Best move (one thing that matters most this week)"
+          />
+          <input
+            value={plan.microHabits}
+            onChange={(e) => setPlan((p) => ({ ...p, microHabits: e.target.value }))}
+            placeholder="Micro-habits (e.g., 10m daily build, 5m journal, 20m walk)"
+          />
+          <input
+            value={plan.reviewQuestion}
+            onChange={(e) => setPlan((p) => ({ ...p, reviewQuestion: e.target.value }))}
+            placeholder="Friday review question"
+          />
+        </div>
+
+        <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
+          <button className="btn btnPrimary" onClick={submit} disabled={!plan.bestMove.trim()}>
+            Save weekly plan
+          </button>
+
+          {/* Guided loop buttons */}
+          <Link className="btn btnPrimary" href="/today?loop=1">
+            Restart loop ↺
+          </Link>
+          <Link className="btn" href="/">
+            Back to home
+          </Link>
+        </div>
       </div>
 
-      <div className="card grid" style={{ gap: 10 }}>
-        <div>
-          <div className="label">Week</div>
-          <div><b>{weekISO}</b></div>
-        </div>
-        <div>
-          <div className="label">Focus domain</div>
-          <select className="select" value={focusDomain} onChange={(e)=>setFocusDomain(e.target.value)}>
-            <option>Health/Energy</option>
-            <option>Money/Security</option>
-            <option>Relationships/Connection</option>
-            <option>Career/Meaning</option>
-          </select>
-        </div>
-        <div>
-          <div className="label">One best move (this week)</div>
-          <input className="input" value={bestMove} onChange={(e)=>setBestMove(e.target.value)} />
-        </div>
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <div className="label">Micro-habits (one per line)</div>
-            <textarea className="textarea" value={habits} onChange={(e)=>setHabits(e.target.value)} />
-          </div>
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <div className="label">Affirmations (one per line)</div>
-            <textarea className="textarea" value={affirm} onChange={(e)=>setAffirm(e.target.value)} />
-          </div>
-        </div>
-        <button className="btn btnPrimary" onClick={savePlan}>Save weekly plan</button>
-      </div>
-
       <div className="card">
-        <h2 className="h2">Recent plans</h2>
-        <div className="grid" style={{ gap: 10 }}>
-          {saved.slice(0,3).map((x) => (
-            <div key={x.weekISO} className="card" style={{ padding: 12, borderColor: "var(--line)" }}>
-              <div className="row" style={{ justifyContent: "space-between" }}>
-                <b>{x.weekISO}</b><span className="badge">{x.focusDomain}</span>
-              </div>
-              <p className="p" style={{ marginTop: 6 }}><b>Best move:</b> {x.bestMove}</p>
-              <p className="small"><b>Habits:</b> {x.microHabits.join(" · ")}</p>
-              <p className="small"><b>Affirmations:</b> {x.affirmations.join(" · ")}</p>
-            </div>
-          ))}
-          {saved.length === 0 && <p className="p">No plans saved yet.</p>}
-        </div>
+        <h3 className="h2">Tip</h3>
+        <p className="p">
+          In the full version, Weekly Plan would summarize trends from Today pulses and surface a “best move” suggestion.
+        </p>
       </div>
     </div>
   );
