@@ -7,9 +7,10 @@ import { useSearchParams } from "next/navigation";
 type Habit = {
   id: string;
   text: string;
-  due: string;         // YYYY-MM-DD
-  createdAt: string;   // ISO timestamp
-  doneDates: string[]; // list of YYYY-MM-DD
+  due: string;          // YYYY-MM-DD
+  createdAt: string;    // ISO
+  doneDates: string[];  // YYYY-MM-DD
+  sourceId?: string;    // ✅ unique sid from Today (optional)
 };
 
 const KEY = "pf_habits_v2";
@@ -32,8 +33,9 @@ function daysLeft(due: string) {
 
 export default function HabitsPage() {
   const params = useSearchParams();
-  const seed = params.get("seed"); // habit text passed from Today
-  const seedDue = params.get("due"); // due date passed from Today
+  const seed = params.get("seed");
+  const seedDue = params.get("due");
+  const sid = params.get("sid"); // ✅ unique click id
 
   const [habits, setHabits] = useState<Habit[]>([]);
   const [text, setText] = useState("");
@@ -48,22 +50,26 @@ export default function HabitsPage() {
     const existing = load<Habit[]>(KEY, []);
     setHabits(existing);
 
-    // If we came from Today with seed+due, auto-add ONCE
     if (seed && seed.trim()) {
       const dueValue =
         seedDue && seedDue.length === 10 ? seedDue : addDays(isoDate(), 1);
 
-      const already = existing.some(
-        (h) => h.text === seed.trim() && h.due === dueValue
-      );
+      // ✅ if sid exists, use it to prevent only exact same click being re-added
+      const alreadyBySid = sid ? existing.some((h) => h.sourceId === sid) : false;
 
-      if (!already) {
+      // fallback duplicate logic if no sid
+      const alreadyByTextDue = !sid
+        ? existing.some((h) => h.text === seed.trim() && h.due === dueValue)
+        : false;
+
+      if (!alreadyBySid && !alreadyByTextDue) {
         const h: Habit = {
           id: crypto.randomUUID(),
           text: seed.trim(),
           due: dueValue,
           createdAt: new Date().toISOString(),
           doneDates: [],
+          sourceId: sid || undefined,
         };
         const next = [h, ...existing];
         persist(next);

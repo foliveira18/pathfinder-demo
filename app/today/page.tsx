@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { load, save } from "@/lib/storage";
+import { useRouter } from "next/navigation";
 
 // v2 schema: calm is "good" when higher
 type Pulse = {
@@ -44,8 +45,11 @@ function average(items: number[]) {
   return items.reduce((a, b) => a + b, 0) / items.length;
 }
 
+/**
+ * More varied suggestions (so habits won't always be a walk).
+ * Still simple rule-based, but richer.
+ */
 function suggestFromPulse(p: Pulse, recent: Pulse[]): CoachSuggestion {
-  // last 7 pulses (including current values as first element)
   const last7 = recent.slice(0, 7);
 
   const avgEnergy = average(last7.map((x) => x.energy));
@@ -53,48 +57,62 @@ function suggestFromPulse(p: Pulse, recent: Pulse[]): CoachSuggestion {
   const avgMood = average(last7.map((x) => x.mood));
   const avgFocus = average(last7.map((x) => x.focus));
 
-  // Rule-based coach (fast + obvious)
+  // 1) Very low calm (high stress): recovery first
   if (p.calm <= 2) {
     return {
       title: "Reset and lower load",
-      bestMove: "Lower stress load: do one 10-minute reset.",
-      microSteps: ["2 min breathing (box breathing)", "8 min walk or stretch"],
-      why: `Calm is ${p.calm}/5 (low). Priority is recovery, not productivity.`,
+      bestMove: "Lower stress load: do a 10-minute reset now.",
+      microSteps: ["2 min breathing (box breathing)", "8 min stretch OR slow walk"],
+      why: `Calm is ${p.calm}/5 (low). Your best ROI is calming the body first.`,
       tags: ["recovery", "stress"],
     };
   }
 
+  // 2) Low energy: protect + gentle start
   if (p.energy <= 2) {
     return {
       title: "Recover energy",
-      bestMove: "Recover energy: protect your next 3 hours.",
-      microSteps: ["Drink water + daylight 3 min", "Pick one task only (15 min start)"],
-      why: `Energy is ${p.energy}/5. Keep it gentle and reduce friction.`,
+      bestMove: "Recover energy: protect your next 3 hours (less, not more).",
+      microSteps: ["Water + daylight (3 min)", "One tiny task start (10 min)"],
+      why: `Energy is ${p.energy}/5. Keep the next step small and kind.`,
       tags: ["recovery", "energy"],
     };
   }
 
+  // 3) High focus + good calm: deep work day
   if (p.focus >= 4 && p.energy >= 3 && p.calm >= 3) {
     return {
       title: "Deep work sprint",
-      bestMove: "Use momentum: one focused 25-minute sprint.",
+      bestMove: "Use momentum: one focused sprint on the highest-value task.",
       microSteps: ["Write the next tiny step (30 sec)", "25 min deep work (timer)"],
-      why: `Focus ${p.focus}/5 and calm ${p.calm}/5 look good — this is a “build” day.`,
+      why: `Focus ${p.focus}/5 and calm ${p.calm}/5 are good — a sprint will compound.`,
       tags: ["focus", "execution"],
     };
   }
 
+  // 4) Low mood: connection + small win
   if (p.mood <= 2) {
     return {
       title: "Lift mood gently",
-      bestMove: "Lift mood: do a small positive connection.",
-      microSteps: ["Send 1 message to someone", "5 min music + tidy one surface"],
-      why: `Mood is ${p.mood}/5. Small wins + connection help most.`,
+      bestMove: "Lift mood: do one small connection + one small win.",
+      microSteps: ["Send 1 message to someone", "Tidy one surface (5 min)"],
+      why: `Mood is ${p.mood}/5. Connection and small wins tend to help fastest.`,
       tags: ["mood", "connection"],
     };
   }
 
-  // default
+  // 5) Medium everything: structure without overload
+  if (p.energy === 3 && p.calm === 3 && p.mood === 3 && p.focus === 3) {
+    return {
+      title: "Light structure",
+      bestMove: "Create light structure: choose ONE priority and make it easy.",
+      microSteps: ["Pick 1 priority (30 sec)", "Do 10 minutes of it now"],
+      why: "You’re in the middle. A tiny start beats planning.",
+      tags: ["consistency"],
+    };
+  }
+
+  // Default: maintain
   return {
     title: "Maintain momentum",
     bestMove: "Keep it simple: one small action that moves you forward.",
@@ -104,8 +122,19 @@ function suggestFromPulse(p: Pulse, recent: Pulse[]): CoachSuggestion {
   };
 }
 
+function isoDate(d = new Date()) {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(baseYYYYMMDD: string, days: number) {
+  const d = new Date(baseYYYYMMDD + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return isoDate(d);
+}
+
 export default function Today() {
-  const today = new Date().toISOString().slice(0, 10);
+  const router = useRouter();
+  const today = isoDate();
 
   const [all, setAll] = useState<Pulse[]>([]);
   const [pulse, setPulse] = useState<Pulse>({
@@ -116,30 +145,18 @@ export default function Today() {
     focus: 3,
   });
 
-  // shows "Saved ✅" when you persist to storage
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
-  // tomorrow deadline for 1-click habit
-  const tomorrow = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
-  }, []);
-
   useEffect(() => {
-    // 1) load v2
     const v2 = load<any>(KEY_V2, null);
     if (Array.isArray(v2) && v2.length && "calm" in v2[0]) {
       const arr = v2 as Pulse[];
       setAll(arr);
-
-      // prefill if today exists
       const todayEntry = arr.find((p) => p.date === today);
       if (todayEntry) setPulse(todayEntry);
       return;
     }
 
-    // 2) migrate old stress->calm once
     const old = load<any>(KEY_OLD, []);
     if (Array.isArray(old) && old.length && "stress" in old[0]) {
       const migrated: Pulse[] = (old as OldPulse[]).map((p) => ({
@@ -151,7 +168,6 @@ export default function Today() {
       }));
       setAll(migrated);
       save(KEY_V2, migrated);
-
       const todayEntry = migrated.find((p) => p.date === today);
       if (todayEntry) setPulse(todayEntry);
       return;
@@ -165,7 +181,7 @@ export default function Today() {
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setPulse((p) => ({ ...p, [k]: Number(e.target.value) }));
 
-  // ✅ LIVE suggestion: updates as sliders move
+  // ✅ LIVE suggestion as sliders move
   const liveSuggestion = useMemo(() => {
     const next = [pulse, ...all.filter((p) => p.date !== pulse.date)].slice(0, 30);
     return suggestFromPulse(pulse, next);
@@ -178,16 +194,27 @@ export default function Today() {
     setSavedAt(Date.now());
   };
 
-  // URL that sends the suggestion into Habits with deadline
-  const habitSeed = encodeURIComponent(liveSuggestion.microSteps[0]);
-  const habitDue = encodeURIComponent(tomorrow);
-  const habitLink = `/habits?seed=${habitSeed}&due=${habitDue}`;
+  /**
+   * ✅ One-click: send ANY chosen suggestion text to Habits
+   * with a due date and a unique sid so Habits doesn't treat it as a duplicate.
+   */
+  const pushHabit = (text: string, dueYYYYMMDD: string) => {
+    const sid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const url =
+      `/habits?seed=${encodeURIComponent(text)}` +
+      `&due=${encodeURIComponent(dueYYYYMMDD)}` +
+      `&sid=${encodeURIComponent(sid)}`;
+    router.push(url);
+  };
+
+  const dueTomorrow = addDays(today, 1);
+  const dueIn3Days = addDays(today, 3);
 
   return (
     <div className="grid" style={{ gap: 16 }}>
       <div className="card">
         <h2 className="h2">Today</h2>
-        <p className="p">30 seconds in. You get a suggested action immediately.</p>
+        <p className="p">Move the sliders. The suggestion updates live.</p>
 
         <div className="grid" style={{ gap: 12, marginTop: 12 }}>
           <div>
@@ -216,53 +243,58 @@ export default function Today() {
         </div>
 
         <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
-          <button className="btn btnPrimary" onClick={submit}>
-            Save
-          </button>
-          <Link className="btn" href="/weekly?loop=1">
-            Weekly summary
-          </Link>
-          <Link className="btn btnPrimary" href={habitLink}>
-            Turn this into a habit (due tomorrow) →
-          </Link>
+          <button className="btn btnPrimary" onClick={submit}>Save</button>
+          <Link className="btn" href="/weekly?loop=1">Weekly summary</Link>
+          <Link className="btn" href="/habits?loop=1">View habits</Link>
         </div>
 
         {savedAt && (
-          <p className="small" style={{ marginTop: 10 }}>
-            Saved ✅
-          </p>
+          <p className="small" style={{ marginTop: 10 }}>Saved ✅</p>
         )}
       </div>
 
-      {/* ✅ Always visible and LIVE */}
+      {/* LIVE suggestion card */}
       <div className="card">
         <div className="badge">Today’s Best Move (live)</div>
-        <h3 className="h2" style={{ marginTop: 6 }}>
-          {liveSuggestion.title}
-        </h3>
+        <h3 className="h2" style={{ marginTop: 6 }}>{liveSuggestion.title}</h3>
         <p className="p" style={{ marginTop: 8 }}>
           <b>{liveSuggestion.bestMove}</b>
         </p>
 
         <div className="grid" style={{ gap: 8, marginTop: 10 }}>
-          <div className="p">
-            <b>1-minute plan:</b>
-          </div>
+          <div className="p"><b>1-minute plan:</b></div>
           <div className="p">1) {liveSuggestion.microSteps[0]}</div>
           <div className="p">2) {liveSuggestion.microSteps[1]}</div>
-          <p className="small" style={{ marginTop: 10 }}>
-            {liveSuggestion.why}
-          </p>
+          <p className="small" style={{ marginTop: 10 }}>{liveSuggestion.why}</p>
         </div>
 
+        {/* ✅ Three different habit actions (so you can add different ones) */}
         <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
-          <Link className="btn btnPrimary" href={habitLink}>
-            Add micro-step #1 as a habit →
-          </Link>
-          <Link className="btn" href="/habits?loop=1">
-            View habits
-          </Link>
+          <button
+            className="btn btnPrimary"
+            onClick={() => pushHabit(liveSuggestion.bestMove, dueTomorrow)}
+          >
+            Add “Best Move” as habit (due tomorrow)
+          </button>
+
+          <button
+            className="btn"
+            onClick={() => pushHabit(liveSuggestion.microSteps[0], dueTomorrow)}
+          >
+            Add micro-step #1 (due tomorrow)
+          </button>
+
+          <button
+            className="btn"
+            onClick={() => pushHabit(liveSuggestion.microSteps[1], dueIn3Days)}
+          >
+            Add micro-step #2 (due in 3 days)
+          </button>
         </div>
+
+        <p className="small" style={{ marginTop: 10 }}>
+          Tip: micro-step #1 is usually the easiest to execute today.
+        </p>
       </div>
     </div>
   );
