@@ -10,7 +10,7 @@ type Habit = {
   due: string;          // YYYY-MM-DD
   createdAt: string;    // ISO
   doneDates: string[];  // YYYY-MM-DD
-  sourceId?: string;    // ✅ unique sid from Today (optional)
+  sourceId?: string;    // sid from Today (optional)
 };
 
 const KEY = "pf_habits_v2";
@@ -35,48 +35,55 @@ export default function HabitsPage() {
   const params = useSearchParams();
   const seed = params.get("seed");
   const seedDue = params.get("due");
-  const sid = params.get("sid"); // ✅ unique click id
+  const sid = params.get("sid"); // unique click id from Today
 
   const [habits, setHabits] = useState<Habit[]>([]);
   const [text, setText] = useState("");
   const [due, setDue] = useState(addDays(isoDate(), 3));
 
+  // 1) Load habits once
+  useEffect(() => {
+    setHabits(load<Habit[]>(KEY, []));
+  }, []);
+
+  // 2) Whenever seed/due/sid changes, try to add the habit
+  useEffect(() => {
+    if (!seed || !seed.trim()) return;
+
+    const dueValue =
+      seedDue && seedDue.length === 10 ? seedDue : addDays(isoDate(), 1);
+
+    setHabits((prev) => {
+      // Use current state; if empty (first render), fall back to storage
+      const existing = prev.length ? prev : load<Habit[]>(KEY, []);
+
+      // If sid exists, it must be unique
+      if (sid && existing.some((h) => h.sourceId === sid)) return existing;
+
+      // If no sid, fall back to (text+due) duplicate check
+      if (!sid && existing.some((h) => h.text === seed.trim() && h.due === dueValue)) {
+        return existing;
+      }
+
+      const newHabit: Habit = {
+        id: crypto.randomUUID(),
+        text: seed.trim(),
+        due: dueValue,
+        createdAt: new Date().toISOString(),
+        doneDates: [],
+        sourceId: sid || undefined,
+      };
+
+      const next = [newHabit, ...existing];
+      save(KEY, next);
+      return next;
+    });
+  }, [seed, seedDue, sid]);
+
   function persist(next: Habit[]) {
     setHabits(next);
     save(KEY, next);
   }
-
-  useEffect(() => {
-    const existing = load<Habit[]>(KEY, []);
-    setHabits(existing);
-
-    if (seed && seed.trim()) {
-      const dueValue =
-        seedDue && seedDue.length === 10 ? seedDue : addDays(isoDate(), 1);
-
-      // ✅ if sid exists, use it to prevent only exact same click being re-added
-      const alreadyBySid = sid ? existing.some((h) => h.sourceId === sid) : false;
-
-      // fallback duplicate logic if no sid
-      const alreadyByTextDue = !sid
-        ? existing.some((h) => h.text === seed.trim() && h.due === dueValue)
-        : false;
-
-      if (!alreadyBySid && !alreadyByTextDue) {
-        const h: Habit = {
-          id: crypto.randomUUID(),
-          text: seed.trim(),
-          due: dueValue,
-          createdAt: new Date().toISOString(),
-          doneDates: [],
-          sourceId: sid || undefined,
-        };
-        const next = [h, ...existing];
-        persist(next);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const upcoming = useMemo(() => {
     return [...habits].sort((a, b) => a.due.localeCompare(b.due));
@@ -106,7 +113,9 @@ export default function HabitsPage() {
       const done = h.doneDates.includes(today);
       return {
         ...h,
-        doneDates: done ? h.doneDates.filter((d) => d !== today) : [today, ...h.doneDates],
+        doneDates: done
+          ? h.doneDates.filter((d) => d !== today)
+          : [today, ...h.doneDates],
       };
     });
     persist(next);
@@ -122,18 +131,17 @@ export default function HabitsPage() {
         <h2 className="h2">Habits (execution engine)</h2>
         <p className="p">Turn suggestions into small commitments with deadlines.</p>
 
-        <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          className="row"
+          style={{ marginTop: 12, gap: 10, flexWrap: "wrap", alignItems: "center" }}
+        >
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="New habit (e.g., 10-minute reset)"
             style={{ minWidth: 320 }}
           />
-          <input
-            type="date"
-            value={due}
-            onChange={(e) => setDue(e.target.value)}
-          />
+          <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
           <button className="btn btnPrimary" onClick={addHabit}>
             Add
           </button>
@@ -158,7 +166,10 @@ export default function HabitsPage() {
 
               return (
                 <div key={h.id} className="card" style={{ padding: 14 }}>
-                  <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div
+                    className="row"
+                    style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+                  >
                     <div>
                       <div style={{ fontWeight: 700 }}>{h.text}</div>
                       <div className="small">
@@ -167,7 +178,9 @@ export default function HabitsPage() {
                           ({left >= 0 ? `${left} day(s) left` : `${Math.abs(left)} day(s) overdue`})
                         </span>
                       </div>
-                      <div className="small">Completions: <b>{completions}</b></div>
+                      <div className="small">
+                        Completions: <b>{completions}</b>
+                      </div>
                     </div>
 
                     <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
