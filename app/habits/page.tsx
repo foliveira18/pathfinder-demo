@@ -7,10 +7,10 @@ import { useSearchParams } from "next/navigation";
 type Habit = {
   id: string;
   text: string;
-  due: string;          // YYYY-MM-DD
-  createdAt: string;    // ISO
-  doneDates: string[];  // YYYY-MM-DD
-  sourceId?: string;    // sid from Today (optional)
+  due: string;
+  createdAt: string;
+  doneDates: string[];
+  sourceId?: string;
 };
 
 const KEY = "pf_habits_v2";
@@ -18,13 +18,11 @@ const KEY = "pf_habits_v2";
 function isoDate(d = new Date()) {
   return d.toISOString().slice(0, 10);
 }
-
 function addDays(date: string, days: number) {
   const d = new Date(date + "T00:00:00");
   d.setDate(d.getDate() + days);
   return isoDate(d);
 }
-
 function daysLeft(due: string) {
   const now = new Date(isoDate() + "T00:00:00").getTime();
   const dd = new Date(due + "T00:00:00").getTime();
@@ -35,18 +33,17 @@ export default function HabitsPage() {
   const params = useSearchParams();
   const seed = params.get("seed");
   const seedDue = params.get("due");
-  const sid = params.get("sid"); // unique click id from Today
+  const sid = params.get("sid");
 
   const [habits, setHabits] = useState<Habit[]>([]);
   const [text, setText] = useState("");
   const [due, setDue] = useState(addDays(isoDate(), 3));
 
-  // 1) Load habits once
   useEffect(() => {
     setHabits(load<Habit[]>(KEY, []));
   }, []);
 
-  // 2) Whenever seed/due/sid changes, try to add the habit
+  // ✅ Add habit whenever seed/due/sid changes (NOT only first mount)
   useEffect(() => {
     if (!seed || !seed.trim()) return;
 
@@ -54,16 +51,10 @@ export default function HabitsPage() {
       seedDue && seedDue.length === 10 ? seedDue : addDays(isoDate(), 1);
 
     setHabits((prev) => {
-      // Use current state; if empty (first render), fall back to storage
       const existing = prev.length ? prev : load<Habit[]>(KEY, []);
 
-      // If sid exists, it must be unique
       if (sid && existing.some((h) => h.sourceId === sid)) return existing;
-
-      // If no sid, fall back to (text+due) duplicate check
-      if (!sid && existing.some((h) => h.text === seed.trim() && h.due === dueValue)) {
-        return existing;
-      }
+      if (!sid && existing.some((h) => h.text === seed.trim() && h.due === dueValue)) return existing;
 
       const newHabit: Habit = {
         id: crypto.randomUUID(),
@@ -111,12 +102,7 @@ export default function HabitsPage() {
     const next = habits.map((h) => {
       if (h.id !== id) return h;
       const done = h.doneDates.includes(today);
-      return {
-        ...h,
-        doneDates: done
-          ? h.doneDates.filter((d) => d !== today)
-          : [today, ...h.doneDates],
-      };
+      return { ...h, doneDates: done ? h.doneDates.filter((d) => d !== today) : [today, ...h.doneDates] };
     });
     persist(next);
   }
@@ -131,10 +117,7 @@ export default function HabitsPage() {
         <h2 className="h2">Habits (execution engine)</h2>
         <p className="p">Turn suggestions into small commitments with deadlines.</p>
 
-        <div
-          className="row"
-          style={{ marginTop: 12, gap: 10, flexWrap: "wrap", alignItems: "center" }}
-        >
+        <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -142,14 +125,8 @@ export default function HabitsPage() {
             style={{ minWidth: 320 }}
           />
           <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-          <button className="btn btnPrimary" onClick={addHabit}>
-            Add
-          </button>
+          <button className="btn btnPrimary" onClick={addHabit}>Add</button>
         </div>
-
-        <p className="small" style={{ marginTop: 10 }}>
-          Tip: keep habits tiny. A deadline creates momentum.
-        </p>
       </div>
 
       <div className="card">
@@ -162,14 +139,9 @@ export default function HabitsPage() {
             {upcoming.map((h) => {
               const left = daysLeft(h.due);
               const doneToday = h.doneDates.includes(isoDate());
-              const completions = h.doneDates.length;
-
               return (
                 <div key={h.id} className="card" style={{ padding: 14 }}>
-                  <div
-                    className="row"
-                    style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
-                  >
+                  <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                     <div>
                       <div style={{ fontWeight: 700 }}>{h.text}</div>
                       <div className="small">
@@ -178,18 +150,13 @@ export default function HabitsPage() {
                           ({left >= 0 ? `${left} day(s) left` : `${Math.abs(left)} day(s) overdue`})
                         </span>
                       </div>
-                      <div className="small">
-                        Completions: <b>{completions}</b>
-                      </div>
                     </div>
 
                     <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
                       <button className="btn btnPrimary" onClick={() => toggleDone(h.id)}>
                         {doneToday ? "Undo today" : "Done today"}
                       </button>
-                      <button className="btn" onClick={() => removeHabit(h.id)}>
-                        Remove
-                      </button>
+                      <button className="btn" onClick={() => removeHabit(h.id)}>Remove</button>
                     </div>
                   </div>
                 </div>
