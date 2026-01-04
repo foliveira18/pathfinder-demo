@@ -13,11 +13,11 @@ type Pulse = {
   focus: number;
 };
 
-// old schema: stress existed
+// old schema (what you had before)
 type OldPulse = {
   date: string;
   energy: number;
-  stress: number; // 1..5 where higher meant more stress
+  stress: number; // 1..5 where higher meant "more stress"
   mood: number;
   focus: number;
 };
@@ -36,37 +36,24 @@ const KEY_V2 = "pf_pulses_v2";
 function clamp15(n: number) {
   return Math.max(1, Math.min(5, n));
 }
-
 function label5(n: number) {
   return ["Very low", "Low", "Medium", "High", "Very high"][clamp15(n) - 1];
 }
-
 function average(items: number[]) {
   if (!items.length) return 0;
   return items.reduce((a, b) => a + b, 0) / items.length;
 }
 
-function trendArrow(delta: number) {
-  if (delta > 0.25) return "↑";
-  if (delta < -0.25) return "↓";
-  return "→";
-}
-
 function suggestFromPulse(p: Pulse, recent: Pulse[]): CoachSuggestion {
-  // Look at last 7 (including today if present)
+  // last 7 pulses (including current values as first element)
   const last7 = recent.slice(0, 7);
-  const avgEnergy = average(last7.map(x => x.energy));
-  const avgCalm = average(last7.map(x => x.calm));
-  const avgMood = average(last7.map(x => x.mood));
-  const avgFocus = average(last7.map(x => x.focus));
 
-  // Compare today vs 7-day avg (tiny “coach” flavor)
-  const dEnergy = p.energy - avgEnergy;
-  const dCalm = p.calm - avgCalm;
-  const dMood = p.mood - avgMood;
-  const dFocus = p.focus - avgFocus;
+  const avgEnergy = average(last7.map((x) => x.energy));
+  const avgCalm = average(last7.map((x) => x.calm));
+  const avgMood = average(last7.map((x) => x.mood));
+  const avgFocus = average(last7.map((x) => x.focus));
 
-  // Rule-based coach (fast, clear payoff)
+  // Rule-based coach (fast + obvious)
   if (p.calm <= 2) {
     return {
       title: "Reset and lower load",
@@ -81,7 +68,7 @@ function suggestFromPulse(p: Pulse, recent: Pulse[]): CoachSuggestion {
     return {
       title: "Recover energy",
       bestMove: "Recover energy: protect your next 3 hours.",
-      microSteps: ["Drink water + get daylight 3 min", "Pick one task only (15 min start)"],
+      microSteps: ["Drink water + daylight 3 min", "Pick one task only (15 min start)"],
       why: `Energy is ${p.energy}/5. Keep it gentle and reduce friction.`,
       tags: ["recovery", "energy"],
     };
@@ -107,12 +94,12 @@ function suggestFromPulse(p: Pulse, recent: Pulse[]): CoachSuggestion {
     };
   }
 
-  // Default: light structure + maintain momentum
+  // default
   return {
     title: "Maintain momentum",
     bestMove: "Keep it simple: one small action that moves you forward.",
     microSteps: ["Pick 1 habit for today (2 min)", "Do 10 minutes of it now"],
-    why: `Solid baseline. Energy ${p.energy}/5, calm ${p.calm}/5, focus ${p.focus}/5.`,
+    why: `Baseline looks OK. Energy ${p.energy}/5, calm ${p.calm}/5, focus ${p.focus}/5.`,
     tags: ["consistency"],
   };
 }
@@ -128,39 +115,45 @@ export default function Today() {
     mood: 3,
     focus: 3,
   });
-  const [savedSuggestion, setSavedSuggestion] = useState<CoachSuggestion | null>(null);
+
+  // shows "Saved ✅" when you persist to storage
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // tomorrow deadline for 1-click habit
+  const tomorrow = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, []);
 
   useEffect(() => {
-    // 1) Load v2 if present
+    // 1) load v2
     const v2 = load<any>(KEY_V2, null);
     if (Array.isArray(v2) && v2.length && "calm" in v2[0]) {
-      setAll(v2 as Pulse[]);
-      // If there is an entry for today, prefill sliders + show suggestion
-      const todayEntry = (v2 as Pulse[]).find(p => p.date === today);
-      if (todayEntry) {
-        setPulse(todayEntry);
-        setSavedSuggestion(suggestFromPulse(todayEntry, v2 as Pulse[]));
-      }
+      const arr = v2 as Pulse[];
+      setAll(arr);
+
+      // prefill if today exists
+      const todayEntry = arr.find((p) => p.date === today);
+      if (todayEntry) setPulse(todayEntry);
       return;
     }
 
-    // 2) Otherwise migrate old stress->calm
+    // 2) migrate old stress->calm once
     const old = load<any>(KEY_OLD, []);
     if (Array.isArray(old) && old.length && "stress" in old[0]) {
       const migrated: Pulse[] = (old as OldPulse[]).map((p) => ({
         date: p.date,
         energy: typeof p.energy === "number" ? p.energy : 3,
-        calm: typeof p.stress === "number" ? (6 - p.stress) : 3, // invert
+        calm: typeof p.stress === "number" ? 6 - p.stress : 3,
         mood: typeof p.mood === "number" ? p.mood : 3,
         focus: typeof p.focus === "number" ? p.focus : 3,
       }));
       setAll(migrated);
       save(KEY_V2, migrated);
-      const todayEntry = migrated.find(p => p.date === today);
-      if (todayEntry) {
-        setPulse(todayEntry);
-        setSavedSuggestion(suggestFromPulse(todayEntry, migrated));
-      }
+
+      const todayEntry = migrated.find((p) => p.date === today);
+      if (todayEntry) setPulse(todayEntry);
       return;
     }
 
@@ -172,32 +165,29 @@ export default function Today() {
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setPulse((p) => ({ ...p, [k]: Number(e.target.value) }));
 
+  // ✅ LIVE suggestion: updates as sliders move
+  const liveSuggestion = useMemo(() => {
+    const next = [pulse, ...all.filter((p) => p.date !== pulse.date)].slice(0, 30);
+    return suggestFromPulse(pulse, next);
+  }, [pulse, all]);
+
   const submit = () => {
     const next = [pulse, ...all.filter((p) => p.date !== pulse.date)].slice(0, 30);
     setAll(next);
     save(KEY_V2, next);
-
-    const s = suggestFromPulse(pulse, next);
-    setSavedSuggestion(s);
+    setSavedAt(Date.now());
   };
 
-  const last7 = useMemo(() => all.slice(0, 7), [all]);
-  const weekStats = useMemo(() => {
-    if (!last7.length) return null;
-    const avgE = average(last7.map(p => p.energy));
-    const avgC = average(last7.map(p => p.calm));
-    const avgM = average(last7.map(p => p.mood));
-    const avgF = average(last7.map(p => p.focus));
-    return { avgE, avgC, avgM, avgF };
-  }, [last7]);
+  // URL that sends the suggestion into Habits with deadline
+  const habitSeed = encodeURIComponent(liveSuggestion.microSteps[0]);
+  const habitDue = encodeURIComponent(tomorrow);
+  const habitLink = `/habits?seed=${habitSeed}&due=${habitDue}`;
 
   return (
     <div className="grid" style={{ gap: 16 }}>
       <div className="card">
         <h2 className="h2">Today</h2>
-        <p className="p">
-          30 seconds in. You get a suggested action immediately.
-        </p>
+        <p className="p">30 seconds in. You get a suggested action immediately.</p>
 
         <div className="grid" style={{ gap: 12, marginTop: 12 }}>
           <div>
@@ -227,56 +217,53 @@ export default function Today() {
 
         <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
           <button className="btn btnPrimary" onClick={submit}>
-            Save & get suggestion
+            Save
           </button>
-
-          <Link className="btn btnPrimary" href="/habits?loop=1">
-            Go to Habits →
-          </Link>
-
           <Link className="btn" href="/weekly?loop=1">
             Weekly summary
           </Link>
+          <Link className="btn btnPrimary" href={habitLink}>
+            Turn this into a habit (due tomorrow) →
+          </Link>
         </div>
+
+        {savedAt && (
+          <p className="small" style={{ marginTop: 10 }}>
+            Saved ✅
+          </p>
+        )}
       </div>
 
-      {/* Immediate payoff card */}
-      {savedSuggestion && (
-        <div className="card">
-          <div className="badge">Today’s Best Move</div>
-          <h3 className="h2" style={{ marginTop: 6 }}>{savedSuggestion.title}</h3>
-          <p className="p" style={{ marginTop: 8 }}>
-            <b>{savedSuggestion.bestMove}</b>
-          </p>
-          <div className="grid" style={{ gap: 8, marginTop: 10 }}>
-            <div className="p"><b>1-minute plan:</b></div>
-            <div className="p">1) {savedSuggestion.microSteps[0]}</div>
-            <div className="p">2) {savedSuggestion.microSteps[1]}</div>
-            <p className="small" style={{ marginTop: 10 }}>{savedSuggestion.why}</p>
-          </div>
-          <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
-            <Link className="btn btnPrimary" href="/habits?loop=1">
-              Turn this into a habit →
-            </Link>
-            <Link className="btn" href="/weekly?loop=1">
-              See weekly summary
-            </Link>
-          </div>
-        </div>
-      )}
+      {/* ✅ Always visible and LIVE */}
+      <div className="card">
+        <div className="badge">Today’s Best Move (live)</div>
+        <h3 className="h2" style={{ marginTop: 6 }}>
+          {liveSuggestion.title}
+        </h3>
+        <p className="p" style={{ marginTop: 8 }}>
+          <b>{liveSuggestion.bestMove}</b>
+        </p>
 
-      {/* Small weekly hint (optional) */}
-      {weekStats && (
-        <div className="card">
-          <h3 className="h2">Last 7 days (quick view)</h3>
-          <p className="p" style={{ marginTop: 8 }}>
-            Avg Energy: {weekStats.avgE.toFixed(1)} · Avg Calm: {weekStats.avgC.toFixed(1)} · Avg Mood: {weekStats.avgM.toFixed(1)} · Avg Focus: {weekStats.avgF.toFixed(1)}
-          </p>
-          <p className="small">
-            This is what Weekly uses to propose your “best move.”
+        <div className="grid" style={{ gap: 8, marginTop: 10 }}>
+          <div className="p">
+            <b>1-minute plan:</b>
+          </div>
+          <div className="p">1) {liveSuggestion.microSteps[0]}</div>
+          <div className="p">2) {liveSuggestion.microSteps[1]}</div>
+          <p className="small" style={{ marginTop: 10 }}>
+            {liveSuggestion.why}
           </p>
         </div>
-      )}
+
+        <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
+          <Link className="btn btnPrimary" href={habitLink}>
+            Add micro-step #1 as a habit →
+          </Link>
+          <Link className="btn" href="/habits?loop=1">
+            View habits
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
