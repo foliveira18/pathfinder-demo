@@ -138,7 +138,7 @@ export default function Today() {
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setPulse((p) => ({ ...p, [k]: Number(e.target.value) }));
 
-  // ✅ LIVE suggestion (changes as sliders move)
+  // Live suggestion (changes as sliders move)
   const liveSuggestion = useMemo(() => suggestFromPulse(pulse), [pulse]);
 
   const submit = () => {
@@ -148,7 +148,7 @@ export default function Today() {
     setSavedAt(Date.now());
   };
 
-  // ✅ Send chosen text to Habits, unique sid each click
+  // Send chosen text to Habits, unique sid each click
   const pushHabit = (text: string, dueYYYYMMDD: string) => {
     const sid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     router.push(
@@ -213,14 +213,32 @@ export default function Today() {
         </div>
 
         <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
-          <button className="btn btnPrimary" onClick={() => pushHabit(liveSuggestion.microSteps[0], dueTomorrow)}>
-            Add micro-step #1 (due tomorrow)
+          <div className="small" style={{ width: "100%", marginBottom: 4, opacity: 0.9 }}>
+            Turn a step into a habit (adds it to Habits with a deadline):
+          </div>
+
+          <button
+            className="btn btnPrimary"
+            onClick={() => pushHabit(liveSuggestion.microSteps[0], dueTomorrow)}
+            aria-label={`Add habit: ${liveSuggestion.microSteps[0]} (due tomorrow)`}
+          >
+            Add: {liveSuggestion.microSteps[0]} (due tomorrow)
           </button>
-          <button className="btn" onClick={() => pushHabit(liveSuggestion.microSteps[1], dueIn3Days)}>
-            Add micro-step #2 (due in 3 days)
+
+          <button
+            className="btn"
+            onClick={() => pushHabit(liveSuggestion.microSteps[1], dueIn3Days)}
+            aria-label={`Add habit: ${liveSuggestion.microSteps[1]} (due in 3 days)`}
+          >
+            Add: {liveSuggestion.microSteps[1]} (due in 3 days)
           </button>
-          <button className="btn" onClick={() => pushHabit(liveSuggestion.bestMove, dueTomorrow)}>
-            Add Best Move (due tomorrow)
+
+          <button
+            className="btn"
+            onClick={() => pushHabit(liveSuggestion.bestMove, dueTomorrow)}
+            aria-label={`Add habit: ${liveSuggestion.bestMove} (due tomorrow)`}
+          >
+            Add: {liveSuggestion.bestMove} (due tomorrow)
           </button>
         </div>
       </div>
